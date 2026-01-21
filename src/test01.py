@@ -24,7 +24,7 @@ def extract_json_from_response(response_text: str) -> str:
 
 def main():
 
-    image_path='/Users/rianrachmanto/miniforge3/project/vlm_project01/images/WhatsApp Image 2026-01-12 at 20.49.34.jpeg'
+    image_path='your_directory/receipt1.jpg'  # Replace with your image path
     response = chat(
         model="gemma3:4b",
         messages=[

@@ -29,7 +29,8 @@ def extract_json_from_response(response_text: str) -> str:
 
 
 def main():
-    images_dir = Path("/Users/rianrachmanto/miniforge3/project/images/")
+    # images_dir = Path("/Users/rianrachmanto/miniforge3/project/images/")
+    images_dir=Path("/images/")
 
     rows = []  # accumulate results across images
 
