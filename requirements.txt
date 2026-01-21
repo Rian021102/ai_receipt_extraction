@@ -1,0 +1,4 @@
+ollama
+pandas
+pathlib
+regex

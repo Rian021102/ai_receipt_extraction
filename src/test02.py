@@ -3,7 +3,6 @@ import base64
 import json
 import re
 import pandas as pd
-import os
 from pathlib import Path
 ''''
 Process all images in a directory, extract information using an Ollama vision model,
