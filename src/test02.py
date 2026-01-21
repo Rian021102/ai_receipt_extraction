@@ -29,7 +29,7 @@ def extract_json_from_response(response_text: str) -> str:
 
 
 def main():
-    images_dir = Path("/Users/rianrachmanto/miniforge3/project/vlm_project01/images/")
+    images_dir = Path("/Users/rianrachmanto/miniforge3/project/images/")
 
     rows = []  # accumulate results across images
 
@@ -50,8 +50,9 @@ def main():
                     {
                         "role": "user",
                         "content": (
-                            "Extract recipient and the amount of transfer in JSON format. "
-                            "Return only valid JSON without any markdown formatting."
+                            "Extract the following information from this receipt/transfer image and return as JSON:\n"
+                            '{"recipient": "name of recipient", "amount": "transfer amount", "date": "transaction date"}\n'
+                            "Return only valid JSON without any markdown formatting or explanation."
                         ),
                         # IMPORTANT: images must be base64 strings (or bytes), NOT file paths
                         "images": [img_b64],
@@ -88,6 +89,9 @@ def main():
     if rows:
         df = pd.DataFrame(rows)
         print("\n=== Combined table ===")
+        #change the value of the column recipient to person 1, person 2 and so on
+        df['recipient'] = ['person ' + str(i+1) for i in range(len(df))]
+        #remove source_file and account_number and account columns
         print(df)
     else:
         print("\nNo valid rows extracted.")
