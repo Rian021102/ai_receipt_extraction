@@ -4,6 +4,8 @@ import json
 import re
 import pandas as pd
 from pathlib import Path
+import matplotlib.pyplot as plt
+
 ''''
 Process all images in a directory, extract information using an Ollama vision model,
 and compile results into a single table.
@@ -30,7 +32,7 @@ def extract_json_from_response(response_text: str) -> str:
 
 def main():
     # images_dir = Path("/Users/rianrachmanto/miniforge3/project/images/")
-    images_dir=Path("/images/")
+    images_dir=Path("/Users/rianrachmanto/miniforge3/project/images")
 
     rows = []  # accumulate results across images
 
@@ -53,7 +55,7 @@ def main():
                         "content": (
                             "Extract the following information from this receipt/transfer image and return as JSON:\n"
                             '{"recipient": "name of recipient", "amount": "transfer amount", "date": "transaction date"}\n'
-                            "Return only valid JSON without any markdown formatting or explanation."
+                            "Return only valid JSON without any markdown formatting or explanation. Ammount needs to be in number format only.\n"
                         ),
                         # IMPORTANT: images must be base64 strings (or bytes), NOT file paths
                         "images": [img_b64],
