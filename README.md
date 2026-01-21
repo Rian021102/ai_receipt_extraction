@@ -1,4 +1,4 @@
-# Data Extraction From RECEIPT Images Using Multi Modal LLM GEMMA3
+# Data Extraction From Receipt Images Using Multi Modal LLM GEMMA3
 
 This is just fun trial project for multi modal LLM GEMMA3 and it's capability in extracting information from images.
 The whole idea is the utilization of LLM in extracting data/information from the mobile banking transaction receipt.
