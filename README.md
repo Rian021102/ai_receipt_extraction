@@ -1,0 +1,19 @@
+# Data Extraction From Images Using Multi Modal LLM GEMMA3
+
+This is just fun trial project for multi modal LLM GEMMA3 and it's capability in extracting information from images.
+The whole idea is the utilization of LLM in extracting data/information from the mobile banking transaction receipt.
+With extraction such data such as the name of the recipient, the amount of the money and date, we can build simple
+dashboard, hence it'll be a lot easier to monitor spending. The model used in this project is Gemma3 with 4b parameters
+running locally via OLLAMA.
+
+## General Procedure For OLLAMA
+1. Head to https://ollama.com/ & register
+2. Download ollama that suits your OS (My case is Mac)
+3. Install ollama
+4. Go to terminal and type: ollama run (your desired model), for example: ollama run gemma3:4b
+5. Make sure the ollama run on the background
+
+## How to use the code
+1. Head to 
+
+
