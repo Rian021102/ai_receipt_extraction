@@ -1,4 +1,6 @@
-ollama
+fastapi
+uvicorn[standard]
+pydantic
 pandas
-pathlib
-regex
+ollama
+python-multipart
