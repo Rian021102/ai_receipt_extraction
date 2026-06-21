@@ -32,6 +32,7 @@ prompt = (
     "- date: the single transaction date, applied to all items\n"
     "- for each item: item name, amount_purchased (quantity), "
     "price_per_item (unit price), total_price (amount_purchased x price_per_item)\n"
+    "some price use dot instead of comma, some use comma instead of dot, please handle both cases\n"
     "- printed_total: the grand total printed on the receipt, if shown\n"
     "Return only valid JSON matching the schema."
 )
