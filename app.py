@@ -24,7 +24,6 @@ import json
 import dash
 import ollama
 import plotly.graph_objects as go
-from dateutil import parser as dateparser
 from dash import Input, Output, State, callback, dash_table, dcc, html
 from dash.exceptions import PreventUpdate
 
@@ -65,35 +64,15 @@ PROMPT = (
     "- date: the single transaction date, applied to all items\n"
     "- for each item: item name, amount_purchased (quantity), "
     "price_per_item (unit price), total_price (amount_purchased x price_per_item)\n"
+    "some price use dot instead of comma, please treat dot as you treat coma\n"
     "- printed_total: the grand total printed on the receipt, if shown\n"
     "Return only valid JSON matching the schema."
 )
 
 
 def normalize_date(raw: str) -> str:
-    """Normalize a receipt date string to ISO YYYY-MM-DD.
-
-    Receipts use all sorts of formats (01/06/2024, June 1 2024, 2024.06.01).
-    dayfirst=True biases ambiguous cases like 03/04/2024 toward day/month,
-    which fits most non-US receipts. If parsing fails, return the raw string
-    unchanged so nothing is silently lost.
-    """
-    if not raw or not raw.strip():
-        return ""
-    raw = raw.strip()
-    # A leading 4-digit number means a year-first format (2024-06-01), which is
-    # unambiguous — parse it as-is. Otherwise the format is day/month-style and
-    # we bias toward day-first (fits most non-US receipts).
-    year_first = raw[:4].isdigit()
-    try:
-        dt = dateparser.parse(
-            raw,
-            yearfirst=year_first,
-            dayfirst=not year_first,
-        )
-        return dt.strftime("%Y-%m-%d")
-    except (ValueError, OverflowError, TypeError):
-        return raw
+    """Delegate to the shared normalizer in db.py."""
+    return db.normalize_date(raw)
 
 
 def extract_receipt(image_b64: str) -> dict:
@@ -137,7 +116,7 @@ MUTED = "#6f685c"
 ACCENT_SEQ = ["#9c2b1e", "#c97b3c", "#3f6b4f", "#5a7a8c", "#8a6d3b",
               "#7a4b63", "#456b6b", "#a8893f"]
 
-CATEGORIES = ["Groceries", "Food", "Hobby", "Clothes", "Restaurant"]
+CATEGORIES = ["Groceries","Hobby", "Clothes", "Restaurant"]
 
 TABLE_COLUMNS = [
     {"name": "Item", "id": "item", "editable": True},
@@ -172,6 +151,7 @@ def upload_tab():
                         multiple=False,
                         className="uploader",
                     ),
+                    html.Img(id="receipt-preview", className="preview"),
                     html.Div(id="extract-status", className="status"),
                 ],
                 className="upload-col",
@@ -263,7 +243,8 @@ def dashboard_tab():
                 ],
                 className="chart-head",
             ),
-            dcc.Graph(id="bar-chart", config={"displayModeBar": False}),
+            dcc.Graph(id="bar-chart", figure=build_bar_chart(),
+                      config={"displayModeBar": False}),
             html.Div(
                 [
                     html.Span("02", className="chart-num"),
@@ -271,7 +252,8 @@ def dashboard_tab():
                 ],
                 className="chart-head",
             ),
-            dcc.Graph(id="donut-chart", config={"displayModeBar": False}),
+            dcc.Graph(id="donut-chart", figure=build_donut_chart(),
+                      config={"displayModeBar": False}),
         ],
         className="dash-col",
     )
@@ -329,6 +311,7 @@ def render_tab(tab):
     Output("extract-status", "className"),
     Output("current-source", "children"),
     Output("current-source-store", "data"),
+    Output("receipt-preview", "src"),
     Input("upload-image", "contents"),
     State("upload-image", "filename"),
     prevent_initial_call=True,
@@ -345,13 +328,13 @@ def on_upload(contents, filename):
     except ollama.ResponseError as e:
         return (dash.no_update,
                 f"Ollama error: {e}. Is the model pulled?  ollama pull {MODEL_NAME}",
-                "status err", dash.no_update, dash.no_update)
+                "status err", dash.no_update, dash.no_update, contents)
     except json.JSONDecodeError as e:
         return (dash.no_update, f"Model returned invalid JSON: {e}",
-                "status err", dash.no_update, dash.no_update)
+                "status err", dash.no_update, dash.no_update, contents)
     except Exception as e:  # noqa: BLE001
         return (dash.no_update, f"Extraction failed: {e}",
-                "status err", dash.no_update, dash.no_update)
+                "status err", dash.no_update, dash.no_update, contents)
 
     rows = []
     for it in data.get("items", []):
@@ -367,7 +350,7 @@ def on_upload(contents, filename):
 
     date = data.get("date", "")
     msg = f"Extracted {len(rows)} item(s) · receipt date {date or 'unknown'}. Add categories, then submit."
-    return rows, msg, "status ok", filename, {"source": filename, "date": date}
+    return rows, msg, "status ok", filename, {"source": filename, "date": date}, contents
 
 
 # ---------------------------------------------------------------------------
@@ -414,6 +397,7 @@ def running_total(rows):
     Output("submit-status", "className"),
     Output("receipt-table", "data", allow_duplicate=True),
     Output("extract-status", "children", allow_duplicate=True),
+    Output("receipt-preview", "src", allow_duplicate=True),
     Input("submit-rows", "n_clicks"),
     State("receipt-table", "data"),
     State("current-source-store", "data"),
@@ -423,7 +407,8 @@ def submit(n, rows, src):
     if not n:
         raise PreventUpdate
     if not rows:
-        return "Nothing to submit — upload a receipt first.", "status err", dash.no_update, dash.no_update
+        return ("Nothing to submit — upload a receipt first.", "status err",
+                dash.no_update, dash.no_update, dash.no_update)
 
     src = src or {}
     payload = []
@@ -442,8 +427,8 @@ def submit(n, rows, src):
 
     written = db.append_rows(payload)
     msg = f"Wrote {written} row(s) to the ledger. Upload the next receipt."
-    # Clear the table for the next image.
-    return msg, "status ok", [], "Ready for the next receipt."
+    # Clear the table and preview for the next image.
+    return msg, "status ok", [], "Ready for the next receipt.", ""
 
 
 # ---------------------------------------------------------------------------
@@ -462,10 +447,7 @@ def _empty_fig(note):
     return fig
 
 
-@callback(Output("bar-chart", "figure"), Input("tabs", "value"))
-def bar_chart(tab):
-    if tab != "dashboard":
-        raise PreventUpdate
+def build_bar_chart():
     df = db.spend_by_day_category()
     if df.empty:
         return _empty_fig("No expenses yet — submit a receipt first.")
@@ -499,10 +481,7 @@ def bar_chart(tab):
     return fig
 
 
-@callback(Output("donut-chart", "figure"), Input("tabs", "value"))
-def donut_chart(tab):
-    if tab != "dashboard":
-        raise PreventUpdate
+def build_donut_chart():
     df = db.spend_by_category()
     if df.empty:
         return _empty_fig("No categories yet.")
@@ -564,6 +543,9 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--body);}
 .uploader{border:1.5px dashed var(--rule);border-radius:2px;background:var(--panel);
   padding:38px 18px;text-align:center;cursor:pointer;transition:border-color .15s;}
 .uploader:hover{border-color:var(--red);}
+.preview{display:block;max-width:100%;max-height:280px;margin-top:16px;
+  border:1px solid var(--rule);border-radius:2px;}
+.preview[src=""]{display:none;}
 .up-title{font-family:var(--display);font-size:18px;}
 .up-sub{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:6px;
   letter-spacing:0.04em;}

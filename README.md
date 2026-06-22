@@ -1,93 +1,63 @@
-# Receipt Extraction API
+# Ledger — Receipt Expense Tracker
 
-A small FastAPI service that extracts structured line items from receipt images
-using a local vision model (`qwen2.5vl:7b`) through Ollama.
+A Dash app that turns receipt photos into a categorized expense ledger backed by
+DuckDB, with a dashboard of charts.
 
-## Layout
+## Pieces
 
 ```
-src/
-  extractor.py   # core logic — reusable from any app (CLI, worker, notebook)
-  main.py        # FastAPI app — thin HTTP layer over extractor.py
-  requirements.txt
+main.py        # FastAPI + qwen2.5vl extraction API (from earlier)
+db.py          # DuckDB persistence (init, append, aggregation queries)
+app.py         # Dash UI: upload -> edit -> categorize -> submit -> visualize
+expenses.duckdb  # created on first run
 ```
 
-The split matters: `extractor.py` has no FastAPI dependency, so you can import
-`extract_from_path`, `results_to_dataframe`, etc. directly in other applications
-later. `main.py` only handles HTTP concerns.
+## Workflow
 
-## Setup
-
-```bash
-# 1. Make sure Ollama is running and the model is pulled
-ollama pull qwen2.5vl:7b
-ollama list            # confirm the exact tag
-
-# 2. Install deps
-pip install -r requirements.txt
-```
+1. **Capture tab** — drop a receipt image. It's sent to the extraction API and
+   the line items fill the table.
+2. Type a **Category** into each row (free text — whatever scheme you like).
+   You can also edit any extracted value, add rows, or delete rows.
+3. **Submit to ledger** — the rows are appended to DuckDB and the table clears
+   for the next receipt.
+4. Repeat for each receipt; every submit *appends* (nothing is overwritten).
+5. **Dashboard tab** —
+   - a bar chart of total spend per receipt date, and
+   - a donut chart of spend per category (the center names your biggest one).
 
 ## Run
 
-```bash
-uvicorn main:app --reload
-```
-
-- Interactive docs: http://127.0.0.1:8000/docs
-- Health check:      http://127.0.0.1:8000/health
-
-## Endpoints
-
-| Method | Path             | Purpose                                            |
-|--------|------------------|----------------------------------------------------|
-| GET    | `/health`        | Liveness + checks the model is pulled              |
-| POST   | `/extract`       | Single uploaded image → structured result          |
-| POST   | `/extract-path`  | Single image by server-side file path              |
-| POST   | `/extract-batch` | Many uploads → items table + per-image grand totals|
-
-## Examples
-
-Health:
+Three things, in order:
 
 ```bash
-curl http://127.0.0.1:8000/health
+# 1. Model
+ollama pull qwen2.5vl:7b
+
+# 2. Extraction API (terminal 1)
+uvicorn main:app --reload          # http://127.0.0.1:8000
+
+# 3. Dash app (terminal 2)
+python app.py                      # http://127.0.0.1:8050
 ```
 
-Single upload:
+If your API runs elsewhere:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/extract \
-  -F "file=@/home/rian/images/receipt.jpg"
+RECEIPT_API_URL=http://host:port python app.py
 ```
 
-Server-side path:
+## Dependencies
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/extract-path?path=/home/rian/images/receipt.jpg"
-```
-
-Batch:
-
-```bash
-curl -X POST http://127.0.0.1:8000/extract-batch \
-  -F "files=@/home/rian/images/a.jpg" \
-  -F "files=@/home/rian/images/b.jpg"
-```
-
-## Reusing the core in another app
-
-```python
-from extractor import extract_from_path, results_to_dataframe, grand_totals
-
-result = extract_from_path("/home/rian/images/receipt.jpg")
-df = results_to_dataframe([result])
-print(grand_totals(df))
+pip install dash duckdb plotly requests pandas fastapi uvicorn ollama python-multipart
 ```
 
 ## Notes
 
-- Line totals are **recomputed** server-side as `amount_purchased x price_per_item`;
-  the model's own `total_price` is ignored to avoid arithmetic mistakes.
-- `total_match` compares the recomputed grand total against the receipt's printed
-  total — a `false` flags an image worth eye-checking.
-- If `/health` shows `model_ready: false`, run the `ollama pull` it suggests.
+- Line totals are recomputed (qty x unit price) by the API before they reach the
+  table, so the math is trustworthy even if the model misreads a printed total.
+- Empty categories roll up as **Uncategorized** in the donut.
+- The DuckDB file is local and append-only via these flows; to inspect it:
+  ```python
+  import duckdb; duckdb.connect("expenses.duckdb").sql("SELECT * FROM expenses")
+  ```

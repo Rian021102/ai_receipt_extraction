@@ -6,10 +6,35 @@ from pathlib import Path
 
 import duckdb
 import pandas as pd
+from dateutil import parser as dateparser
 
 DB_PATH = str(Path(__file__).parent / "expenses.duckdb")
 
 TABLE = "expenses"
+
+
+def normalize_date(raw: str) -> str:
+    """Normalize a receipt date string to ISO YYYY-MM-DD.
+
+    Receipts use all sorts of formats (01/06/2024, June 1 2024, 2024.06.01).
+    A leading 4-digit number is treated as year-first (unambiguous); otherwise
+    we bias toward day-first, which fits most non-US receipts. Unparseable
+    values are returned unchanged so nothing is silently lost.
+    """
+    if not raw or not str(raw).strip():
+        return ""
+    raw = str(raw).strip()
+    year_first = raw[:4].isdigit()
+    try:
+        dt = dateparser.parse(raw, yearfirst=year_first, dayfirst=not year_first)
+    except (ValueError, OverflowError, TypeError):
+        return raw
+    # Guard against OCR misreads of the year (e.g. '0016-06-26'). A date far
+    # outside a plausible range almost certainly means a misread digit, so keep
+    # the raw string flagged rather than emitting a wrong, confident-looking date.
+    if not (2000 <= dt.year <= 2099):
+        return raw
+    return dt.strftime("%Y-%m-%d")
 
 
 def _connect():
@@ -36,6 +61,37 @@ def init_db() -> None:
         )
         # Sequence for stable ids across appends.
         con.execute("CREATE SEQUENCE IF NOT EXISTS expense_id_seq START 1")
+
+    # Clean up any dates stored before normalization existed.
+    normalize_existing_dates()
+
+
+def normalize_existing_dates() -> int:
+    """Re-normalize every stored date to YYYY-MM-DD.
+
+    Rows written before date normalization was added may hold raw strings like
+    '14-06-2026' or '16/06/2026'. This rewrites them in place. Returns the
+    number of rows changed. Safe to run repeatedly (already-normal dates are
+    left untouched).
+    """
+    with _connect() as con:
+        try:
+            dates = con.execute(
+                f"SELECT DISTINCT date FROM {TABLE}"
+            ).fetchdf()["date"].tolist()
+        except duckdb.CatalogException:
+            return 0
+
+        changed = 0
+        for raw in dates:
+            norm = normalize_date(raw)
+            if norm != raw:
+                con.execute(
+                    f"UPDATE {TABLE} SET date = ? WHERE date = ?",
+                    [norm, raw],
+                )
+                changed += 1
+        return changed
 
 
 def append_rows(rows: list[dict]) -> int:
